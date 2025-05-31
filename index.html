@@ -1,8 +1,8 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <meta charset="UTF-8">
-  <title>My Telegram Web App</title>
+  <meta charset="UTF-8" />
+  <title>Hidden Lul</title>
   <style>
     body {
       font-family: sans-serif;
@@ -13,15 +13,33 @@
       font-weight: bold;
       margin-top: 10px;
     }
+    #cookies-list {
+      margin-top: 20px;
+      max-height: 400px;
+      overflow-y: auto;
+      background: white;
+      padding: 10px;
+      border-radius: 6px;
+    }
+    .cookie-item {
+      border-bottom: 1px solid #ddd;
+      padding: 8px 0;
+    }
   </style>
 </head>
 <body>
-  <h2>Привет из Telegram Web App!</h2>
+  <h2>Привет melusine!</h2>
   <p id="user">Загрузка...</p>
+
+  <button id="load-cookies-btn">Загрузить кукисы</button>
+
+  <div id="cookies-list"></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/supabase.min.js"></script>
 
   <script>
     const tg = window.Telegram.WebApp;
-    tg.expand(); // расширяет окно
+    tg.expand();
 
     const user = tg.initDataUnsafe?.user;
     if (user) {
@@ -29,6 +47,47 @@
     } else {
       document.getElementById("user").textContent = "Не удалось получить данные пользователя.";
     }
+
+    const SUPABASE_URL = "https://ndlearloynfhyxwzemyb.supabase.co";
+    const SUPABASE_ANON_KEY = "ТВОЙ_АНОН_КЛЮЧ_ОТ_SUPABASE";
+
+    const supabase = supabaseJs.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+    async function loadCookies() {
+      const { data, error } = await supabase
+        .from('nft')
+        .select('id, name, model, bg_color, symbol, image_url, created_at')
+        .limit(100)
+        .order('created_at', { ascending: false });
+
+      const container = document.getElementById('cookies-list');
+      container.innerHTML = "";
+
+      if (error) {
+        container.textContent = `Ошибка загрузки: ${error.message}`;
+        return;
+      }
+
+      if (!data || data.length === 0) {
+        container.textContent = "Кукисы не найдены.";
+        return;
+      }
+
+      data.forEach(item => {
+        const div = document.createElement('div');
+        div.className = "cookie-item";
+        div.innerHTML = `
+          <strong>${item.name || "Без имени"}</strong><br/>
+          Model: ${item.model || "—"}<br/>
+          Bg color: ${item.bg_color || "—"}<br/>
+          Symbol: ${item.symbol || "—"}<br/>
+          <img src="${item.image_url || ''}" alt="image" style="max-width:100px; display:block; margin-top:5px;" />
+          <small>Создан: ${new Date(item.created_at).toLocaleString()}</small>
+        `;
+        container.appendChild(div);
+      });
+    }
+    document.getElementById('load-cookies-btn').addEventListener('click', loadCookies);
   </script>
 </body>
 </html>
