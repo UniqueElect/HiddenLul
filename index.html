@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>My Telegram Web App</title>
+  <style>
+    body {
+      font-family: sans-serif;
+      padding: 20px;
+      background-color: #f2f2f2;
+    }
+    #user {
+      font-weight: bold;
+      margin-top: 10px;
+    }
+  </style>
+</head>
+<body>
+  <h2>Привет из Telegram Web App!</h2>
+  <p id="user">Загрузка...</p>
+
+  <script>
+    const tg = window.Telegram.WebApp;
+    tg.expand(); // расширяет окно
+
+    const user = tg.initDataUnsafe?.user;
+    if (user) {
+      document.getElementById("user").textContent = `Привет, ${user.first_name} (@${user.username})!`;
+    } else {
+      document.getElementById("user").textContent = "Не удалось получить данные пользователя.";
+    }
+  </script>
+</body>
+</html>
