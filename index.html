@@ -1,93 +1,428 @@
 <!DOCTYPE html>
-<html>
+<html lang="ru">
 <head>
   <meta charset="UTF-8" />
-  <title>Hidden Lul</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Hidden lul</title>
+  <link rel="icon" href="/favicon.ico" type="image/x-icon" />
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/lottie-web/5.9.6/lottie.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+
   <style>
     body {
-      font-family: sans-serif;
-      padding: 20px;
-      background-color: #f2f2f2;
+      margin:0; padding-bottom:100px; min-height:100vh;
+      font-family:Inter,sans-serif; background:#242424; color:#eee;
+      display:flex; flex-direction:column; align-items:center;
     }
-    #user {
-      font-weight: bold;
-      margin-top: 10px;
+    h1 {
+      margin-bottom:30px; color:#646cff; text-align:center; font-size:2.5rem;
     }
-    #cookies-list {
-      margin-top: 20px;
-      max-height: 400px;
-      overflow-y: auto;
-      background: white;
-      padding: 10px;
-      border-radius: 6px;
+    #filters-container {
+      display:flex; gap:10px; margin-bottom:20px;
+      flex-wrap:wrap; justify-content:center;
     }
-    .cookie-item {
-      border-bottom: 1px solid #ddd;
-      padding: 8px 0;
+    #filters-container select,
+    #filters-container input {
+      padding:8px; border-radius:4px; border:1px solid #646cff;
+      background:#333; color:#fff; min-width:120px;
+    }
+    #filters-container button {
+      padding:8px 12px; border:none; border-radius:4px;
+      background:#646cff; color:#fff; cursor:pointer;
+    }
+    #nft-grid {
+    display: grid;
+    gap: 20px;
+    width: 100%;
+    max-width: 1200px;
+
+
+    grid-template-columns: repeat(3, 1fr);
+  }
+    .nft-card {
+      position:relative; overflow:hidden; padding-top:60%;
+      border-radius:8px; box-shadow:0 4px 8px rgba(0,0,0,.2);
+      background:#333; text-decoration:none; color:#fff;
+      display:flex; flex-direction:column; justify-content:flex-end; align-items:center;
+      transition:transform .2s;
+    }
+    .nft-card:hover { transform:translateY(-5px) }
+    .nft-card__background-svg-container {
+      position:absolute; inset:0; z-index:1; overflow:hidden;
+    }
+    .nft-card__background-svg-container svg {
+      width:100%; height:100%; object-fit:cover; preserveAspectRatio:xMidYMid slice;
+    }
+    .nft-card__content {
+      position:absolute; inset:0; z-index:2;
+      display:flex; flex-direction:column; align-items:center; justify-content:center;
+      padding:10px; box-sizing:border-box;
+    }
+    .nft-card__lottie-container { width:60%; height:60%; }
+    .nft-card__id {
+      position:absolute; bottom:12px; left:50%; transform:translateX(-50%);
+      background:rgba(0,0,0,.5); padding:4px 10px; border-radius:12px; font-weight:600;
+    }
+    #statusMessage {
+      margin:20px; color:#aaa; font-size:1.1rem; text-align:center;
     }
   </style>
 </head>
 <body>
-  <h2>Привет melusine!</h2>
-  <p id="user">Загрузка...</p>
+  <h1>Melusine ogurec кукисный наблюдатель</h1>
 
-  <button id="load-cookies-btn">Загрузить кукисы</button>
+  <div id="filters-container">
+    <select id="model-filter"><option value="">Все модели</option></select>
+    <select id="background-filter"><option value="">Все фоны</option></select>
+    <select id="symbol-filter"><option value="">Все символы</option></select>
+    <input id="id-search" type="text" placeholder="ID" />
+    <button id="apply-filters">Применить</button>
+    <button id="reset-filters">Сбросить</button>
+  </div>
 
-  <div id="cookies-list"></div>
-
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/supabase.min.js"></script>
+  <main id="nft-grid"></main>
+  <div id="statusMessage">Loading...</div>
 
   <script>
-    const tg = window.Telegram.WebApp;
-    tg.expand();
+  document.addEventListener('DOMContentLoaded', () => {
+    const SUPA_URL = 'https://ndlearloynfhyxwzemyb.supabase.co';
+    const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5kbGVhcmxveW5maHl4d3plbXliIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDg2OTQwMjgsImV4cCI6MjA2NDI3MDAyOH0.UGlMA6--NRlem2G2lvAIGs0atZ6H-KpQrk7dongx5O4';
+    const supa    = supabase.createClient(SUPA_URL, SUPA_KEY);
 
-    const user = tg.initDataUnsafe?.user;
-    if (user) {
-      document.getElementById("user").textContent = `Привет, ${user.first_name} (@${user.username})!`;
-    } else {
-      document.getElementById("user").textContent = "Не удалось получить данные пользователя.";
+    let pageSize    = 10, 
+        currentPage = 0, 
+        hasMore     = true, 
+        isLoading   = false;
+
+    let currentFilters = {
+      nft_id        : null,
+      model_id      : null,
+      background_id : null,
+      symbol_id     : null
+    };
+
+    const grid    = document.getElementById('nft-grid'),
+          status  = document.getElementById('statusMessage'),
+          mf      = document.getElementById('model-filter'),
+          bf      = document.getElementById('background-filter'),
+          sf      = document.getElementById('symbol-filter'),
+          idIn    = document.getElementById('id-search');
+
+    function publicUrl(bucket, file) {
+      return `${SUPA_URL}/storage/v1/object/public/${bucket}/${encodeURIComponent(file)}`;
+    }
+    function fixName(s) {
+      return s.replace(/\s+/g,'_').replace(/[^A-Za-z0-9._-]/g,'');
+    }
+    function showStatus(msg, cls='') {
+      status.textContent = msg;
+      status.className   = cls;
+      status.style.display = msg ? 'block' : 'none';
     }
 
-    const SUPABASE_URL = "https://ndlearloynfhyxwzemyb.supabase.co";
-    const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5kbGVhcmxveW5maHl4d3plbXliIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDg2OTQwMjgsImV4cCI6MjA2NDI3MDAyOH0.UGlMA6--NRlem2G2lvAIGs0atZ6H-KpQrk7dongx5O4";
+    // 1) Загрузка фильтров
+    async function loadFilterOptions() {
+      try {
+        let res;
 
-    const supabase = supabaseJs.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+        res = await supa.from('model').select('id,name').order('name');
+        res.data.forEach(o => mf.add(new Option(o.name, o.id)));
 
-    async function loadCookies() {
-      const { data, error } = await supabase
-        .from('nft')
-        .select('id, name, model, bg_color, symbol, image_url, created_at')
-        .limit(100)
-        .order('created_at', { ascending: false });
+        res = await supa.from('background').select('id,name').order('name');
+        res.data.forEach(o => bf.add(new Option(o.name, o.id)));
 
-      const container = document.getElementById('cookies-list');
-      container.innerHTML = "";
+        // Только name, без image_url
+        res = await supa.from('symbol').select('id,name').order('name');
+        res.data.forEach(o => sf.add(new Option(o.name, o.id)));
 
-      if (error) {
-        container.textContent = `Ошибка загрузки: ${error.message}`;
-        return;
+      } catch(e) {
+        console.error(e);
+        showStatus('Ошибка загрузки фильтров','error-message');
       }
+    }
 
-      if (!data || data.length === 0) {
-        container.textContent = "Кукисы не найдены.";
-        return;
-      }
-
-      data.forEach(item => {
-        const div = document.createElement('div');
-        div.className = "cookie-item";
-        div.innerHTML = `
-          <strong>${item.name || "Без имени"}</strong><br/>
-          Model: ${item.model || "—"}<br/>
-          Bg color: ${item.bg_color || "—"}<br/>
-          Symbol: ${item.symbol || "—"}<br/>
-          <img src="${item.image_url || ''}" alt="image" style="max-width:100px; display:block; margin-top:5px;" />
-          <small>Создан: ${new Date(item.created_at).toLocaleString()}</small>
-        `;
-        container.appendChild(div);
+    // 2) Загрузка Lottie/TGS
+  async function loadTgs(file, containerId) {
+    try {
+      const resp = await fetch(publicUrl('animations', file));
+      if (!resp.ok) throw new Error('HTTP status ' + resp.status);
+      const buf = await resp.arrayBuffer();
+      const json = JSON.parse(new TextDecoder()
+        .decode(pako.inflate(new Uint8Array(buf))));
+      const c = document.getElementById(containerId);
+      c.innerHTML = '';
+      const anim = lottie.loadAnimation({
+        container: c,
+        renderer:  'svg',
+        loop:      false,
+        autoplay:  false, // НЕ запускаем сразу
+        animationData: json
       });
+      return anim; // возвращаем объект анимации
+    } catch (err) {
+      console.error('Ошибка загрузки анимации', file, err);
+      const c = document.getElementById(containerId);
+      if (c) c.innerHTML = '<div class="nft-card__tgs-placeholder">Ошибка анимации</div>';
+      return null;
     }
-    document.getElementById('load-cookies-btn').addEventListener('click', loadCookies);
+  }
+
+    // 3) Инъекция уникального градиента + паттерна
+function injectPatternAndGradient(svg, col, sym, id) {
+  const suf = '-' + id;
+
+  const patternId = `symbolPat${suf}`;
+  const giftPatId = `giftPattern${suf}`;
+  const colorFilterId = `patternColorFilter${suf}`;
+  const fullPatternId = `fullPattern${suf}`;
+  const gradientId = `giftGradient${suf}`;
+
+  const imgFile = `${fixName(col)}_symbol_${fixName(sym)}.png`;
+  const imgUrl = publicUrl('symbols', imgFile);
+
+  // Удаляем текстовые надписи (title и id под картой)
+  svg = svg.replace(/<text[^>]*>[\s\S]*?<\/text>/g, '');
+
+  // Уникализируем ID в оригинальном SVG
+  svg = svg
+    .replace(/\bid="giftGradient"/g, `id="${gradientId}"`)
+    .replace(/\bid="patternColorFilter"/g, `id="${colorFilterId}"`)
+    .replace(/\bid="giftPattern"/g, `id="${giftPatId}"`)
+    .replace(/\bid="fullPattern"/g, `id="${fullPatternId}"`)
+    .replace(/url\(#giftGradient\)/g, `url(#${gradientId})`)
+    .replace(/url\(#patternColorFilter\)/g, `url(#${colorFilterId})`)
+    .replace(/xlink:href="#giftPattern"/g, `href="#${giftPatId}"`)
+    .replace(/xlink:href="#fullPattern"/g, `href="#${fullPatternId}"`);
+
+  const giftPatternImg = `
+    <image id="${giftPatId}" x="0" y="0" width="100" height="100" href="${imgUrl}" />
+  `;
+
+  const fullPatternMarkup = `
+    <g id="${fullPatternId}">
+      <g opacity="0.212890625" transform="translate(140.5761, 13.79)">
+        <use href="#${giftPatId}" transform="scale(0.3)"></use>
+      </g>
+      <g opacity="0.212890625" transform="translate(249.465, 13.79)">
+        <use href="#${giftPatId}" transform="scale(0.3)"></use>
+      </g>
+      <g opacity="0.223865327" transform="translate(291.8539, 102.7918)">
+        <use href="#${giftPatId}" transform="scale(0.3)"></use>
+      </g>
+      <g opacity="0.223865327" transform="translate(98.1872, 102.7918)">
+        <use href="#${giftPatId}" transform="scale(0.3)"></use>
+      </g>
+      <g opacity="0.221633185" transform="translate(276.2551, 176.2043)">
+        <use href="#${giftPatId}" transform="scale(0.277)"></use>
+      </g>
+      <g opacity="0.123046875" transform="translate(196.144, 188.6412)">
+        <use href="#${giftPatId}" transform="scale(0.277)"></use>
+      </g>
+      <g opacity="0.221633185" transform="translate(116.0329, 176.2043)">
+        <use href="#${giftPatId}" transform="scale(0.277)"></use>
+      </g>
+      <g opacity="0.189569382" transform="translate(355.0988, 79.3286)">
+        <use href="#${giftPatId}" transform="scale(0.2247)"></use>
+      </g>
+      <g opacity="0.260904948" transform="translate(292.0988, 52.1228)">
+        <use href="#${giftPatId}" transform="scale(0.2247)"></use>
+      </g>
+      <g opacity="0.146437872" transform="translate(334.0988, 17.5326)">
+        <use href="#${giftPatId}" transform="scale(0.2247)"></use>
+      </g>
+      <g opacity="0.153087798" transform="translate(198.7654, -5.7866)">
+        <use href="#${giftPatId}" transform="scale(0.2247)"></use>
+      </g>
+      <g opacity="0.145321801" transform="translate(63.4321, 17.5326)">
+        <use href="#${giftPatId}" transform="scale(0.2247)"></use>
+      </g>
+      <g opacity="0.260904948" transform="translate(105.4321, 52.1228)">
+        <use href="#${giftPatId}" transform="scale(0.2247)"></use>
+      </g>
+      <g opacity="0.165899368" transform="translate(42.4321, 79.3286)">
+        <use href="#${giftPatId}" transform="scale(0.2247)"></use>
+      </g>
+      <g opacity="0.165899368" transform="translate(72.7654, 155.8935)">
+        <use href="#${giftPatId}" transform="scale(0.2247)"></use>
+      </g>
+      <g opacity="0.10500372" transform="translate(49.4321, 205.6413)">
+        <use href="#${giftPatId}" transform="scale(0.2247)"></use>
+      </g>
+      <g opacity="0.10500372" transform="translate(344.2099, 205.6413)">
+        <use href="#${giftPatId}" transform="scale(0.2247)"></use>
+      </g>
+      <g opacity="0.152669271" transform="translate(337.2099, 155.8935)">
+        <use href="#${giftPatId}" transform="scale(0.2247)"></use>
+      </g>
+    </g>
+  `;
+
+  const useMarkup = `<use href="#${fullPatternId}" filter="url(#${colorFilterId})" />`;
+
+  // Вставляем в <defs>
+  svg = svg.replace(/<defs>/, `<defs>\n${giftPatternImg}\n${fullPatternMarkup}`);
+
+  // Вставляем внутрь основного <g> перед закрытием
+  svg = svg.replace(/<\/g>/, `${useMarkup}\n</g>`);
+
+  return svg;
+}
+
+    // 4) Создание карточки
+async function createCard(nft) {
+  const {
+    id,
+    collection: { name: col },
+    model: { name: mod },
+    symbol: { name: sym },
+    background: { svg_markup_template: raw }
+  } = nft;
+
+  const base = fixName(`${col}_${mod}`);
+  const tgs = `${base}.tgs`;
+
+  let bg = raw || '';
+  if (bg && sym) bg = injectPatternAndGradient(bg, col, sym, id);
+
+  const lid = `lottie-${id}`;
+  const a = document.createElement('a');
+  a.href = `https://t.me/nft/${col}-${id}`;
+  a.target = '_blank';
+  a.className = 'nft-card';
+  a.innerHTML = `
+    <div class="nft-card__background-svg-container">${bg}</div>
+    <div class="nft-card__content">
+      <div id="${lid}" class="nft-card__lottie-container"></div>
+      <div class="nft-card__id">#${id}</div>
+    </div>
+  `;
+
+  // Временный контейнер, чтобы элемент был в DOM для lottie
+  const tempContainer = document.createElement('div');
+  tempContainer.style.display = 'none';
+  tempContainer.appendChild(a);
+  document.body.appendChild(tempContainer);
+
+  // Загружаем анимацию с autoplay: false
+  const animation = await loadTgs(tgs, lid);
+
+  // Убираем временный контейнер, карточка остаётся внутри
+  document.body.removeChild(tempContainer);
+
+  return { card: a, animation };
+}
+
+    // 5) Загрузка NFT с пагинацией и фильтрами
+  async function loadNFTs(reset = false) {
+  if (isLoading) return;
+  isLoading = true;
+
+  const pageSize = 9;
+
+  if (reset) {
+    grid.innerHTML = '';
+    currentPage = 0;
+    hasMore = true;
+    showStatus('Loading...');
+    currentFilters = {
+      nft_id: idIn.value.match(/^\d+$/) ? +idIn.value : null,
+      model_id: mf.value || null,
+      background_id: bf.value || null,
+      symbol_id: sf.value || null
+    };
+  }
+
+  if (!hasMore) {
+    isLoading = false;
+    return;
+  }
+
+  let q = supa.from('nft')
+    .select(`
+      id,
+      collection:collection_id(name),
+      model:model_id(id,name),
+      background:background_id(id,name,svg_markup_template),
+      symbol:symbol_id(id,name)
+    `)
+    .order('id', { ascending: true })
+    .range(currentPage * pageSize, currentPage * pageSize + pageSize - 1);
+
+  if (currentFilters.nft_id !== null) {
+    q = q.eq('id', currentFilters.nft_id);
+  } else {
+    currentFilters.model_id && (q = q.eq('model_id', currentFilters.model_id));
+    currentFilters.background_id && (q = q.eq('background_id', currentFilters.background_id));
+    currentFilters.symbol_id && (q = q.eq('symbol_id', currentFilters.symbol_id));
+  }
+
+  try {
+    const { data, error } = await q;
+    if (error) throw error;
+
+    if (!data || data.length === 0) {
+      hasMore = false;
+      showStatus(currentPage === 0 ? 'Ничего не найдено.' : 'Загружено всё.', 'no-nfts-message');
+    } else {
+      showStatus('Loading...');
+      const cards = [];
+      const animations = [];
+
+      for (let nft of data) {
+        const { card, animation } = await createCard(nft);
+        cards.push(card);
+        if (animation) animations.push(animation);
+      }
+
+      // Добавляем все карточки в DOM скрытыми
+      cards.forEach(card => card.style.opacity = '0');
+      cards.forEach(card => grid.appendChild(card));
+
+      // После вставки показываем карточки и запускаем все анимации одновременно
+      requestAnimationFrame(() => {
+        cards.forEach(card => {
+          card.style.transition = 'opacity 0.6s ease';
+          card.style.opacity = '1';
+        });
+
+        animations.forEach(anim => anim.play());
+      });
+
+      currentPage++;
+      showStatus('');
+      if (data.length < pageSize) {
+        hasMore = false;
+        showStatus('Загружено всё.');
+      }
+    }
+  } catch (e) {
+    console.error(e);
+    showStatus('Ошибка загрузки NFT: ' + (e.message || e), 'error-message');
+  }
+
+  isLoading = false;
+}
+    // Навешиваем
+    document.getElementById('apply-filters').onclick = ()=> loadNFTs(true);
+    document.getElementById('reset-filters').onclick = ()=>{
+      mf.value = bf.value = sf.value = '';
+      idIn.value='';
+      loadNFTs(true);
+    };
+    window.addEventListener('scroll', ()=>{
+      if (window.innerHeight + window.scrollY > document.body.offsetHeight - 150) {
+        loadNFTs();
+      }
+    });
+
+    // Старт
+    (async()=>{
+      await loadFilterOptions();
+      await loadNFTs(true);
+    })();
+  });
   </script>
 </body>
 </html>
